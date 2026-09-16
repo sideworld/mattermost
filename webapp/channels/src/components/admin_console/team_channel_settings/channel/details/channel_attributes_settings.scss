@@ -1,0 +1,36 @@
+.ChannelAttributesSettings {
+    display: grid;
+    column-gap: 24px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 16px;
+
+    &__row {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+
+        label {
+            font-weight: 600;
+        }
+    }
+
+    &__select,
+    &__input {
+        height: 40px;
+        padding: 0 12px;
+        border: 1px solid rgba(var(--center-channel-color-rgb), 0.16);
+        border-radius: 4px;
+        background: var(--center-channel-bg);
+        color: var(--center-channel-color);
+
+        &:disabled {
+            cursor: not-allowed;
+            opacity: 0.64;
+        }
+    }
+
+    &__select[multiple] {
+        height: auto;
+        min-height: 72px;
+    }
+}
