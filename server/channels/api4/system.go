@@ -149,6 +149,7 @@ func getSystemPing(c *Context, w http.ResponseWriter, r *http.Request) {
 
 	s := make(map[string]any)
 	s[model.STATUS] = model.StatusOk
+	s["SideworldPR"] = "pr1"
 	s["AndroidLatestVersion"] = reqs.AndroidLatestVersion
 	s["AndroidMinVersion"] = reqs.AndroidMinVersion
 	s["IosLatestVersion"] = reqs.IosLatestVersion
