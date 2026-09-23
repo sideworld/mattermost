@@ -12,8 +12,8 @@ const secs = (v) => {
   if (v === null || v === undefined) return "—";
   const n = Number(v);
   if (n < 90) return `${n.toFixed(1)} s`;
-  const m = Math.floor(n / 60);
-  return `${m} m ${(n - m * 60).toFixed(0)} s`;
+  const whole = Math.round(n);                // "8 m 60 s" was 539.6 rounded after the split
+  return `${Math.floor(whole / 60)} m ${whole % 60} s`;
 };
 
 const code = (s) => "`" + String(s).replace(/`/g, "") + "`";
@@ -64,10 +64,12 @@ function render(r) {
     ? `**🔴 ${c.new.length} new failure${c.new.length === 1 ? "" : "s"}**`
     : "**🟢 no new failures**";
   if (mcRed) {
-    const why = (mc.verdict.reasons || []).slice(0, 2).join("; ");
-    verdict = `**🔴 migration check failed** — ${why}${c.new?.length ? ` · ${c.new.length} new suite failure${c.new.length === 1 ? "" : "s"}` : ""}`;
+    verdict = `**🔴 migration check failed** — ${mcHeadline(mc.verdict)}${c.new?.length ? ` · ${c.new.length} new suite failure${c.new.length === 1 ? "" : "s"}` : ""}`;
   } else if (mc && mc.replayed && !r.red) {
-    verdict = "**🟢 no new failures · migration check passed**";
+    // a verdict that records no checks was never judged; say so rather than calling it green
+    verdict = (mc.verdict && mc.verdict.checked && mc.verdict.checked.length)
+      ? "**🟢 no new failures · migration check passed**"
+      : "**🟢 no new failures · ⚠️ migration check produced no verdict**";
   }
 
   out.push(`### Sideworld — \`${world}\` forked at production scale`);
@@ -239,6 +241,20 @@ function renderMigrationCheck(mc) {
   return out.join("\n");
 }
 
+// The headline of a red check: the worst consequence first (what a lock blocked and for how long,
+// requests that failed, backends queued), then latency that rose with nothing blocked, named as
+// the I/O contention it is. ops/ci-migration-verdict.py already ordered the findings by severity.
+function mcHeadline(v) {
+  const f = v.findings || [];
+  const lock = f.filter((x) => x.kind === "lock").map((x) => x.text);
+  const errs = f.filter((x) => x.kind === "errors").map((x) => x.text);
+  const cont = f.find((x) => x.kind === "summary");
+  const parts = [...lock.slice(0, 2), ...errs.slice(0, 1)];
+  if (cont) parts.push(cont.text);
+  if (!parts.length) parts.push(...(v.reasons || []).slice(0, 2));
+  return parts.join("; ");
+}
+
 // The CI form of the Migration Check (ops/ci-migration-verdict.py's object). Fixed order:
 // files, duration, per-statement lock mode / waited / held, backends waiting at peak, per-probe
 // p99 before / during / after, compatibility (old image and new image on the new schema), the
@@ -287,7 +303,11 @@ function renderCiMigrationCheck(mc) {
   out.push(`**Compatibility** — old image on the new schema: ${sm(mc.compat?.old_app_new_schema)}; new image on the new schema (the suite below): ${sm(mc.compat?.new_app_new_schema)}.`);
   out.push("");
   if (v.red) {
-    out.push(`**Verdict: 🔴 fails the thresholds** — ${(v.reasons || []).map((r_) => `${r_}`).join("; ")}.`);
+    const f = v.findings || [];
+    const hard = f.filter((x) => x.kind === "error" || x.kind === "lock" || x.kind === "errors").map((x) => x.text);
+    const cont = f.filter((x) => x.kind === "contention").map((x) => x.text);
+    out.push(`**Verdict: 🔴 fails the thresholds.**` + (hard.length ? ` ${hard.join("; ")}.` : "") +
+             (cont.length ? ` Also slower, without anything blocked: ${cont.join("; ")}.` : ""));
   } else {
     out.push(`**Verdict: 🟢 within the thresholds** (${(v.checked || []).join("; ")}).`);
   }
@@ -295,6 +315,17 @@ function renderCiMigrationCheck(mc) {
   if (mc.safe) {
     out.push(...block(mc.safe, "The safe form, same workload", false));
     out.push("");
+    const sv = mc.safe.verdict;
+    if (sv) {
+      const f = sv.findings || [];
+      const lock = f.filter((x) => x.kind === "lock" || x.kind === "error").map((x) => x.text);
+      const errs = f.filter((x) => x.kind === "errors").map((x) => x.text);
+      const cont = f.filter((x) => x.kind === "contention");
+      if (!sv.red) out.push(`**The safe form against the same thresholds: 🟢 within them** — nothing blocked, nothing failed, no probe over ${mc.thresholds?.p99_factor ?? 10}× its before-window p99.`);
+      else if (!lock.length && !errs.length) out.push(`**The safe form against the same thresholds: non-blocking, but not free** — nothing blocked and nothing failed, yet latency rose while it ran (${cont.map((x) => x.text.replace(/ with nothing blocked.*$/, "")).join("; ")}): the index build's own I/O. It would not pass the p99 rule either; run it off-peak.`);
+      else out.push(`**The safe form against the same thresholds: 🔴 it fails them too** — ${[...lock, ...errs].join("; ")}${cont.length ? `; also ${cont.map((x) => x.text).join("; ")}` : ""}.`);
+      out.push("");
+    }
     if (mc.safe_form?.file_text || mc.safe_form?.statements?.length) {
       out.push("<details><summary>the safe form, as it would be written</summary>");
       out.push("");

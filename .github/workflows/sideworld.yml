@@ -40,6 +40,11 @@ permissions:
 env:
   SIDEWORLD_WORLD: mattermost
   SIDEWORLD_SUITE: smoke
+  # What the box does not need for this world's build: Mattermost's docs (215 MB), webapp (100 MB,
+  # 10k files) and e2e-tests (46 MB) are three quarters of the checkout and none of it enters
+  # the server image; a pull request that changes webapp/ is refused by the build's pre step
+  # from the changed-paths manifest, not from the tree. Unpack went from 24 s to a few.
+  SIDEWORLD_TAR_EXCLUDE: "--exclude=./docs --exclude=./webapp --exclude=./e2e-tests"
 
 jobs:
   fork:
@@ -108,7 +113,8 @@ jobs:
           # the path from the runner drops an idle connection at about 4.5 min ("client_loop: send
           # disconnect: Broken pipe", sideworld/mattermost #2). Keepalives every 30 s hold it open.
           # --exclude the base checkout: the box must receive the pull request's tree and nothing else.
-          tar --exclude-vcs --exclude=./.sideworld-base -czf - . \
+          # shellcheck disable=SC2086 -- SIDEWORLD_TAR_EXCLUDE is a list of --exclude arguments
+          tar --exclude-vcs --exclude=./.sideworld-base $SIDEWORLD_TAR_EXCLUDE -czf - . \
             | ssh -i "$key" -o IdentitiesOnly=yes -o BatchMode=yes \
                   -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
                   -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" \
