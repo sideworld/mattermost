@@ -86,6 +86,7 @@ function render(r) {
     if (p === "build" && r.services_built?.length) label = `build ${r.services_built.map(code).join(", ")}`;
     if (p === "queue" && !r.queued) continue;
     if (p === "sessions" && !r.sessions) continue;   // worlds without personas to mint
+    if (p === "migration-check" && !r.migration_check) continue;   // the pull request adds no migration
     out.push(`| ${label} | ${secs(r.phases[p])} |`);
     // The restore phase is mostly a file copy, and saying so is the difference between a useful
     // number and a misleading one.

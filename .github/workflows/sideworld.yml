@@ -104,9 +104,13 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/known_hosts"
           # Nothing here is interpolated into the shell by Actions: PR_NUMBER and HEAD_SHA come
           # through the environment, and the box validates both against fixed patterns anyway.
+          # ServerAliveInterval: a run queued behind another one on the box is silent for minutes, and
+          # the path from the runner drops an idle connection at about 4.5 min ("client_loop: send
+          # disconnect: Broken pipe", sideworld/mattermost #2). Keepalives every 30 s hold it open.
           # --exclude the base checkout: the box must receive the pull request's tree and nothing else.
           tar --exclude-vcs --exclude=./.sideworld-base -czf - . \
             | ssh -i "$key" -o IdentitiesOnly=yes -o BatchMode=yes \
+                  -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
                   -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" \
                   ci@"$BOX_HOST" "$SIDEWORLD_WORLD $PR_NUMBER $HEAD_SHA $SIDEWORLD_SUITE" \
             > "$RUNNER_TEMP/sideworld.json"
